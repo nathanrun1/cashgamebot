@@ -1,0 +1,19 @@
+DISCORD BOT!!
+
+"Lazy Bank"
+
+Goal: Bot that handles all cash game logistics including:
+
+- Managing the Bank:
+    - Buy-ins
+    - Cash-outs
+    - Staking
+    - Other shit probably
+- Keeping track of player stats for fun:
+    - Total net gain/loss (w leaderboard)
+    - Total cash won/lost
+    - Total games played (and maybe time played)
+- Keeping game history:
+    - Commands for starting/ending a cash game
+    - Tracking total time (maybe)
+
