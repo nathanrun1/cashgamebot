@@ -3,19 +3,86 @@ import mysql.connector
 from mysql.connector import Error
 import pandas as pd
 
-"""
-This file acts as main database interaction for the bot.
+# --- READ ME! ---:
+# This file acts as main database interaction for the bot.
+#
+# TO USE THE DATABASE:
+#
+# for usage in file, write:
+# 'from balances import Balances'
+#
+# Balances is the class used for interaction with the MySQL database
+#
+# RELEVANT FUNCTIONS:
+# Balances.get_players() returns list of all players as Player objects (holding their name and balance)
+# Balances.get_debts() returns list with full debt history as Debt objects (including debt_type, recipient_id,
+#     payer_id, amount, date)
+# Balances.get_player(player_id) gets player with id 'player_id', returns as a Player object
+# Balances.update_player_balance(player_id, balance) sets new balance to 'balance' for player with id 'player_id'
+# Balances.add_player_balance(player_id, amount) adds 'amount' to balance of player with id 'player_id'
+# Balances.add_player(player_name) adds a player of name 'player_name' to the database
+# Balances.add_debt(debt_type, recipient_id, payer_id, amount) adds a new debt to database with provided parameters
+# Balances.refresh_balances() recalculates and updates all player balances based solely on debt history
 
-Debt_history:
-    For every element:
-        Payer.balance -= Amount
-        Recipient.balance += Amount 
-Types:
-    Payment: Payer settles debt. Recipient balance goes down, Payer balance goes up.
-    Buy in & Cash out: Payer gains debt. Recipient balance goes up, Payer balance goes down.
-"""
+
+# ------------- CONSTANTS -------------
 
 
+DATABASE_NAME = "cashgamebot"
+
+
+# ------------- FUNCTIONS -------------
+
+
+def create_server_connection(host_name, user_name, user_password):
+    connection = None
+    try:
+        connection = mysql.connector.connect(
+            host=host_name,
+            user=user_name,
+            passwd=user_password
+        )
+        print("MySQL Database connection successful")
+    except Error as err:
+        print(f"Error: '{err}'")
+
+    return connection
+
+
+def get_connection():
+    return create_server_connection("localhost", "root", "iit7&&pORt")
+
+
+def __make_database(connection):
+    query = f"""
+    CREATE DATABASE {DATABASE_NAME};
+
+    USE {DATABASE_NAME};
+
+    CREATE TABLE debt_history (
+        debt_type VARCHAR(20),
+        recipient_id INT,
+        payer_id INT,
+        amount FLOAT,
+        date DATE
+    );
+
+    CREATE TABLE player_data (
+        player_id INT,
+        player_name VARCHAR(25),
+        balance INT
+    );
+    """
+    cursor = connection.cursor()
+    cursor.execute(query)
+
+
+# ------------- CLASSES -------------
+
+
+# class Player contains a player's player_id, name and balance. Used to compare different players and
+#   balances with ease
+# Initialize: plr = Player(player_id, name, balance)
 class Player:
     def __init__(self, player_id, name, balance):
         self.player_id = player_id
@@ -48,6 +115,9 @@ class Player:
         return self.balance >= other.balance
 
 
+# class Debt contains a debt's debt_type, recipient_id, payer_id, amount and date added. Used to interact
+#   with individual debts more easily.
+# Initialize: debt = Debt(debt_type, recipient_id, payer_id, amount, date)
 class Debt:
     def __init__(self, debt_type, recipient_id, payer_id, amount, date):
         self.debt_type = debt_type
@@ -76,52 +146,8 @@ class Debt:
         return not self.__eq__(other)
 
 
-DATABASE_NAME = "cashgamebot"
-
-
-def create_server_connection(host_name, user_name, user_password):
-    connection = None
-    try:
-        connection = mysql.connector.connect(
-            host=host_name,
-            user=user_name,
-            passwd=user_password
-        )
-        print("MySQL Database connection successful")
-    except Error as err:
-        print(f"Error: '{err}'")
-
-    return connection
-
-
-def get_connection():
-    return create_server_connection("localhost", "root", "iit7&&pORt")
-
-
-def __make_database(connection):
-    query = f"""
-    CREATE DATABASE {DATABASE_NAME};
-    
-    USE {DATABASE_NAME};
-    
-    CREATE TABLE debt_history (
-        debt_type VARCHAR(20),
-        recipient_id INT,
-        payer_id INT,
-        amount FLOAT,
-        date DATE
-    );
-
-    CREATE TABLE player_data (
-        player_id INT,
-        player_name VARCHAR(25),
-        balance INT
-    );
-    """
-    cursor = connection.cursor()
-    cursor.execute(query)
-
-
+# class Balances allows direct interaction with the database.
+# Initialize: balances = Balances()
 class Balances:
     def __init__(self):
         self.connection = get_connection()
