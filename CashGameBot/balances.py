@@ -203,7 +203,7 @@ class Balances:
         return balance
 
     def add_player_balance(self, player_id, amount):
-        self.__execute_query( "USE cashgamebot")
+        self.__execute_query("USE cashgamebot")
         query = (f"SELECT * "
                  f"FROM player_data "
                  f"WHERE player_id = {player_id}")
