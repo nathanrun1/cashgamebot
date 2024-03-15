@@ -251,17 +251,17 @@ class Balances:
                           plr.iloc[0]['net_gain'])
         return None
 
-    def add_debt(self, debt_type, recipient_id, payer_id, amount):
+    def add_debt(self, debt_type, recipient, payer, amount):
         self.__execute_query("USE cashgamebot")
         query = (f"INSERT INTO debt_history (debt_type, recipient_id, payer_id, amount, date) VALUES "
-                 f"('{debt_type}', {recipient_id}, {payer_id}, {amount}, "
+                 f"('{debt_type}', {recipient.id}, {payer.id}, {amount}, "
                  f"'{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}')")
         self.__execute_query(query)
-        self.add_player_balance(recipient_id, amount)
-        self.add_player_balance(payer_id, -amount)
+        self.add_player_balance(amount, recipient)
+        self.add_player_balance(-amount, payer)
         if amount >= 0:
-            self.add_player_net(recipient_id, amount)
-            self.add_player_net(payer_id, amount)
+            self.add_player_net(amount, recipient)
+            self.add_player_net(-amount, payer)
 
     def add_player(self, user):
         if not self.get_player(user):
