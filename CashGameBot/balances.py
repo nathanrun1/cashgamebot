@@ -19,7 +19,9 @@ import pandas as pd
 #     payer_id, amount, date)
 # Balances.get_player(player_id) gets player with id 'player_id', returns as a Player object
 # Balances.update_player_balance(player_id, balance) sets new balance to 'balance' for player with id 'player_id'
-# Balances.add_player_balance(player_id, amount) adds 'amount' to balance of player with id 'player_id'
+# Balances.add_player_net(player_id, amount) adds 'amount' to total net gains of player with id 'player_id'
+# Balances.update_player_net(player_id, net) sets new total net gains to 'net' for player with id 'player_id'
+# Balances.add_player_net(player_id, amount) adds 'amount' to balance of player with id 'player_id'
 # Balances.add_player(player_name) adds a player of name 'player_name' to the database
 # Balances.add_debt(debt_type, recipient_id, payer_id, amount) adds a new debt to database with provided parameters
 # Balances.refresh_balances() recalculates and updates all player balances based solely on debt history
@@ -80,14 +82,15 @@ def __make_database(connection):
 # ------------- CLASSES -------------
 
 
-# class Player contains a player's player_id, name and balance. Used to compare different players and
+# class Player contains a player's player_id, name, balance and net winnings. Used to compare different players and
 #   balances with ease
-# Initialize: plr = Player(player_id, name, balance)
+# Initialize: plr = Player(player_id, name, balance, net)
 class Player:
-    def __init__(self, player_id, name, balance):
+    def __init__(self, player_id, name, balance, net):
         self.player_id = player_id
         self.name = name
         self.balance = balance
+        self.net = net
 
     def __str__(self):
         return (f'{self.player_id} - {self.name} - '
@@ -103,16 +106,16 @@ class Player:
         return not self.__eq__(other)
 
     def __lt__(self, other):
-        return self.balance < other.balance
+        return self.net < other.net
 
     def __le__(self, other):
-        return self.balance <= other.balance
+        return self.net <= other.net
 
     def __gt__(self, other):
-        return self.balance > other.balance
+        return self.net > other.net
 
     def __ge__(self, other):
-        return self.balance >= other.balance
+        return self.net >= other.net
 
 
 # class Debt contains a debt's debt_type, recipient_id, payer_id, amount and date added. Used to interact
@@ -157,7 +160,7 @@ class Balances:
         try:
             cursor.execute(query)
             self.connection.commit()
-            print("Query successful")
+            return cursor.rowcount
         except Error as err:
             print(f"Error: '{err}'")
 
@@ -177,7 +180,8 @@ class Balances:
             player_id = player_data['player_id'][i]
             player_name = player_data['player_name'][i]
             balance = player_data['balance'][i]
-            new_plr = Player(player_id, player_name, balance)
+            net = player_data['net_gain'][i]
+            new_plr = Player(player_id, player_name, balance, net)
             players.append(new_plr)
         return players
 
@@ -194,32 +198,58 @@ class Balances:
             debts.append(new_debt)
         return debts
 
-    def update_player_balance(self, player_id, balance):
+    def update_player_balance(self, balance, user):
         self.__execute_query("USE cashgamebot")
         query = (f"UPDATE player_data "
                  f"SET balance = {balance} "
-                 f"WHERE player_id = {player_id}")
-        self.__execute_query(query)
+                 f"WHERE player_id = {user.id} AND player_name = '{user.name}'")
+        row_count = self.__execute_query(query)
+        if not row_count or row_count < 1:
+            return False
         return balance
 
-    def add_player_balance(self, player_id, amount):
+    def add_player_balance(self, amount, user):
         self.__execute_query("USE cashgamebot")
-        query = (f"SELECT * "
-                 f"FROM player_data "
-                 f"WHERE player_id = {player_id}")
-        current_balance = pd.read_sql(query, self.connection).iloc[0]['balance']
-        second_query = (f"UPDATE player_data "
+        current_balance = self.get_player(user).balance
+        query = (f"UPDATE player_data "
                  f"SET balance = {current_balance + amount} "
-                 f"WHERE player_id = {player_id}")
-        self.__execute_query(second_query)
+                 f"WHERE player_id = {user.id} AND player_name = '{user.name}'")
+        row_count = self.__execute_query(query)
+        if not row_count or row_count < 1:
+            return False
+        return current_balance + amount
 
-    def get_player(self, player_id):
+    def update_player_net(self, net, user):
+        self.__execute_query("USE cashgamebot")
+        query = (f"UPDATE player_data "
+                 f"SET net_gain = {net} "
+                 f"WHERE player_id = {user.id} AND player_name = '{user.name}'")
+        row_count = self.__execute_query(query)
+        if not row_count or row_count < 1:
+            return False
+        return net
+
+    def add_player_net(self, amount, user):
+        self.__execute_query("USE cashgamebot")
+        current_net = self.get_player(user).net
+        query = (f"UPDATE player_data "
+                 f"SET net_gain = {current_net + amount} "
+                 f"WHERE player_id = {user.id} AND player_name = '{user.name}'")
+        row_count = self.__execute_query(query)
+        if not row_count or row_count < 1:
+            return False
+        return current_net + amount
+
+    def get_player(self, user):
         self.__execute_query("USE cashgamebot")
         query = (f"SELECT * "
                  f"FROM player_data "
-                 f"WHERE player_id = {player_id}")
+                 f"WHERE player_id = {user.id} AND player_name = '{user.name}'")
         plr = pd.read_sql(query, self.connection)
-        return Player(plr.iloc[0]['player_id'], plr.iloc[0]['player_name'], plr.iloc[0]['balance'])
+        if not plr.empty:
+            return Player(plr.iloc[0]['player_id'], plr.iloc[0]['player_name'], plr.iloc[0]['balance'],
+                          plr.iloc[0]['net_gain'])
+        return None
 
     def add_debt(self, debt_type, recipient_id, payer_id, amount):
         self.__execute_query("USE cashgamebot")
@@ -229,11 +259,19 @@ class Balances:
         self.__execute_query(query)
         self.add_player_balance(recipient_id, amount)
         self.add_player_balance(payer_id, -amount)
+        if amount >= 0:
+            self.add_player_net(recipient_id, amount)
+            self.add_player_net(payer_id, amount)
 
-    def add_player(self, player_name):
-        self.__execute_query("USE cashgamebot")
-        query = f"INSERT INTO player_data (player_name) VALUES ('{player_name}')"
-        self.__execute_query(query)
+    def add_player(self, user):
+        if not self.get_player(user):
+            self.__execute_query("USE cashgamebot")
+            query = f"INSERT INTO player_data (player_id, player_name) VALUES ({user.id}, '{user.name}')"
+            row_count = self.__execute_query(query)
+            if not row_count or row_count < 1:
+                return False
+            return True
+        return False
 
     def refresh_balances(self):
         debt_history = self.__get_table("debt_history")
@@ -246,7 +284,9 @@ class Balances:
             amount = debt_history['amount'][j]
             self.add_player_balance(recipient_id, amount)
             self.add_player_balance(payer_id, -amount)
-
+            if amount >= 0:
+                self.add_player_net(recipient_id, amount)
+                self.add_player_net(payer_id, -amount)
 
 
 
