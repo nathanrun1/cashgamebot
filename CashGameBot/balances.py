@@ -1,6 +1,8 @@
 import datetime
 import mysql.connector
 from mysql.connector import Error
+# make file 'sql_password.py' and define PASS = <server_password>. Do not commit this file to repo
+from sql_password import PASS
 import pandas as pd
 
 # --- READ ME! ---:
@@ -52,7 +54,7 @@ def create_server_connection(host_name, user_name, user_password):
 
 
 def get_connection():
-    return create_server_connection("localhost", "root", "iit7&&pORt")
+    return create_server_connection("localhost", "root", PASS)
 
 
 def __make_database(connection):
