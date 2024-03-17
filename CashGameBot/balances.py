@@ -79,6 +79,13 @@ def __make_database(connection):
     cursor.execute(query)
 
 
+def get_current_time_sql():
+    return datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+
+def sql_time_to_datetime(sql_time):
+    return datetime.datetime.strptime(sql_time, '%Y-%m-%d %H:%M:%S')
+
 # ------------- CLASSES -------------
 
 
@@ -198,11 +205,28 @@ class Balances:
             debts.append(new_debt)
         return debts
 
+    def get_session_debts(self):
+        session = self.get_session()
+        if not session[0]:
+            return False
+        debt_history = self.__get_table("debt_history")
+        debts = []
+        for i in debt_history.index:
+            date = sql_time_to_datetime(str(debt_history['date'][i]))
+            amount = debt_history['amount'][i]
+            if date > session[1] and amount > 0:
+                debt_type = debt_history['debt_type'][i]
+                recipient_id = debt_history['recipient_id'][i]
+                payer_id = debt_history['payer_id'][i]
+                new_debt = Debt(debt_type, recipient_id, payer_id, amount, date)
+                debts.append(new_debt)
+        return debts
+
     def update_player_balance(self, balance, user):
         self.__execute_query("USE cashgamebot")
         query = (f"UPDATE player_data "
                  f"SET balance = {balance} "
-                 f"WHERE player_id = {user.id} AND player_name = '{user.name}'")
+                 f"WHERE player_id = {user.id}")
         row_count = self.__execute_query(query)
         if not row_count or row_count < 1:
             return False
@@ -213,7 +237,7 @@ class Balances:
         current_balance = self.get_player(user).balance
         query = (f"UPDATE player_data "
                  f"SET balance = {current_balance + amount} "
-                 f"WHERE player_id = {user.id} AND player_name = '{user.name}'")
+                 f"WHERE player_id = {user.id}")
         row_count = self.__execute_query(query)
         if not row_count or row_count < 1:
             return False
@@ -223,7 +247,7 @@ class Balances:
         self.__execute_query("USE cashgamebot")
         query = (f"UPDATE player_data "
                  f"SET net_gain = {net} "
-                 f"WHERE player_id = {user.id} AND player_name = '{user.name}'")
+                 f"WHERE player_id = {user.id}")
         row_count = self.__execute_query(query)
         if not row_count or row_count < 1:
             return False
@@ -234,7 +258,7 @@ class Balances:
         current_net = self.get_player(user).net
         query = (f"UPDATE player_data "
                  f"SET net_gain = {current_net + amount} "
-                 f"WHERE player_id = {user.id} AND player_name = '{user.name}'")
+                 f"WHERE player_id = {user.id}")
         row_count = self.__execute_query(query)
         if not row_count or row_count < 1:
             return False
@@ -244,7 +268,7 @@ class Balances:
         self.__execute_query("USE cashgamebot")
         query = (f"SELECT * "
                  f"FROM player_data "
-                 f"WHERE player_id = {user.id} AND player_name = '{user.name}'")
+                 f"WHERE player_id = {user.id}")
         plr = pd.read_sql(query, self.connection)
         if not plr.empty:
             return Player(plr.iloc[0]['player_id'], plr.iloc[0]['player_name'], plr.iloc[0]['balance'],
@@ -255,11 +279,11 @@ class Balances:
         self.__execute_query("USE cashgamebot")
         query = (f"INSERT INTO debt_history (debt_type, recipient_id, payer_id, amount, date) VALUES "
                  f"('{debt_type}', {recipient.id}, {payer.id}, {amount}, "
-                 f"'{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}')")
+                 f"'{get_current_time_sql()}')")
         self.__execute_query(query)
         self.add_player_balance(amount, recipient)
         self.add_player_balance(-amount, payer)
-        if amount >= 0:
+        if amount >= 0 and not self.get_session()[0]:
             self.add_player_net(amount, recipient)
             self.add_player_net(-amount, payer)
 
@@ -276,18 +300,67 @@ class Balances:
     def refresh_balances(self):
         debt_history = self.__get_table("debt_history")
         player_data = self.__get_table("player_data")
+        session = self.get_session()
         for i in player_data.index:
-            self.update_player_balance(i+1, 0)
+            reset_query = """
+            UPDATE player_data
+            SET balance = 0
+            """
+            self.__execute_query(reset_query)
         for j in debt_history.index:
             recipient_id = debt_history['recipient_id'][j]
             payer_id = debt_history['payer_id'][j]
             amount = debt_history['amount'][j]
-            self.add_player_balance(recipient_id, amount)
-            self.add_player_balance(payer_id, -amount)
-            if amount >= 0:
-                self.add_player_net(recipient_id, amount)
-                self.add_player_net(payer_id, -amount)
+            debt_datetime = sql_time_to_datetime(str(debt_history['date'][j]))
+            query = f"""
+            UPDATE player_data
+            SET balance = balance + {amount}
+            WHERE player_id = {recipient_id}
+            """
+            self.__execute_query(query)
+            query = f"""
+            UPDATE player_data
+            SET balance = balance - {amount}
+            WHERE player_id = {payer_id}
+            """
+            self.__execute_query(query)
+            if amount >= 0 and ((not session[0]) or session[0] and debt_datetime < session[1]):
+                query = f"""
+                UPDATE player_data
+                SET net_gain = net_gain + {amount}
+                WHERE player_id = {recipient_id}
+                """
+                self.__execute_query(query)
+                query = f"""
+                UPDATE player_data
+                SET net_gain = net_gain - {amount}
+                WHERE player_id = {payer_id}
+                """
+                self.__execute_query(query)
 
+    def start_session(self, bank_id):
+        self.__execute_query("USE cashgamebot")
+        query = f"UPDATE session SET is_session = 1, session_start='{get_current_time_sql()}', bank_id={bank_id}"
+        self.__execute_query(query)
+
+    def end_session(self):
+        self.__execute_query("USE cashgamebot")
+        query = f"UPDATE session SET is_session = 0"
+        self.__execute_query(query)
+        self.refresh_balances()
+
+    def get_session(self):
+        self.__execute_query("USE cashgamebot")
+        query = (f"SELECT * "
+                 f"FROM session ")
+        session_row = pd.read_sql(query, self.connection)
+        if not session_row.empty:
+            if bool(session_row.iloc[0]['is_session']):
+                return (True, sql_time_to_datetime(str(session_row.iloc[0]['session_start'])),
+                        session_row.iloc[0]['bank_id'])
+            else:
+                return False, None, None
+        return None
 
 
 
