@@ -8,7 +8,6 @@ Goal: Bot that handles all cash game logistics including:
     - Buy-ins
     - Cash-outs
     - Staking
-    - Other shit probably
 - Keeping track of player stats for fun:
     - Total net gain/loss (w leaderboard)
     - Total cash won/lost
